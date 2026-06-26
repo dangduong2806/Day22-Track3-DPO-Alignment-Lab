@@ -63,25 +63,21 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=BASE_MODEL,
     max_seq_length=MAX_LEN,
     dtype=None,
-    load_in_4bit=True,
+    load_in_4bit=False,  # Load in 16-bit to avoid dequantization NotImplementedError during save_pretrained_merged
 )
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-if getattr(tokenizer, "chat_template", None) is None:
-    tokenizer.chat_template = (
-        "{% for message in messages %}"
-        "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}"
-        "{{'<|im_start|>assistant\n'}}"
-        "{% endif %}"
-    )
-    print("Set default ChatML chat_template")
 
-# Stack SFT-mini → DPO adapters
+# Stack SFT-mini → DPO adapters sequentially by merging SFT first
 SFT_PATH = REPO_ROOT / "adapters" / "sft-mini"
 model = PeftModel.from_pretrained(model, str(SFT_PATH))
-print(f"Loaded SFT-mini adapter from {SFT_PATH}")
+model = model.merge_and_unload()
+print(f"Loaded and merged SFT-mini adapter from {SFT_PATH}")
+
+# Now load DPO adapter on top of the SFT-merged base
+DPO_PATH = REPO_ROOT / "adapters" / "dpo"
+model = PeftModel.from_pretrained(model, str(DPO_PATH))
+print(f"Loaded DPO adapter from {DPO_PATH}")
 
 # %% [markdown]
 # > **Note:** The DPO adapter trained in NB3 stacks on top of SFT. To get a fully
@@ -96,13 +92,12 @@ print(f"Loaded SFT-mini adapter from {SFT_PATH}")
 # converter in step 3.
 
 # %%
-# This re-loads the model with both SFT and DPO adapters merged into base weights.
-# Output is FP16 (or BF16 on Ampere+) HF-format weights ready for inference.
-model.save_pretrained_merged(
-    str(MERGED_PATH),
-    tokenizer,
-    save_method="merged_16bit",
-)
+# Merge and unload the PEFT adapters manually using PEFT's native merge_and_unload.
+# This ensures that ALL stacked adapters (both SFT and DPO) are fully merged
+# and the PEFT wrappers are stripped, leaving clean, standard base weights.
+model = model.merge_and_unload()
+model.save_pretrained(str(MERGED_PATH))
+tokenizer.save_pretrained(str(MERGED_PATH))
 print(f"Saved merged FP16 to {MERGED_PATH}")
 
 # Remove quantization_config from config.json to avoid loading errors in full precision
@@ -190,8 +185,12 @@ torch.cuda.empty_cache()
 from llama_cpp import Llama
 
 # Find the Q4_K_M GGUF
-gguf_files = list(GGUF_DIR.glob("*Q4_K_M*.gguf")) + list(GGUF_DIR.glob("*q4_k_m*.gguf"))
-assert gguf_files, "No Q4_K_M GGUF found — step 3 may have failed"
+actual_gguf_output_dir = MERGED_PATH.parent / (MERGED_PATH.name + "_gguf")
+gguf_files = (
+    list(GGUF_DIR.glob("*Q4_K_M*.gguf")) + list(GGUF_DIR.glob("*q4_k_m*.gguf")) +
+    list(actual_gguf_output_dir.glob("*Q4_K_M*.gguf")) + list(actual_gguf_output_dir.glob("*q4_k_m*.gguf"))
+)
+assert gguf_files, f"No Q4_K_M GGUF found in {GGUF_DIR} or {actual_gguf_output_dir}"
 gguf_path = gguf_files[0]
 print(f"Loading: {gguf_path.name}")
 

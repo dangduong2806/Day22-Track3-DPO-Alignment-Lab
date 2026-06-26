@@ -78,7 +78,7 @@ def main():
         model, r=16, lora_alpha=32, lora_dropout=0.0, bias="none",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
-        use_gradient_checkpointing="unsloth",
+        use_gradient_checkpointing=True if tier == "T4" else "unsloth",
         random_state=42, use_rslora=False, loftq_config=None,
     )
 
@@ -100,6 +100,7 @@ def main():
         fp16=not torch.cuda.is_bf16_supported(),
         seed=42,
         loss_type="sigmoid",
+        dataset_num_proc=1,
         report_to="none",
     )
 

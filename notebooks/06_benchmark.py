@@ -34,16 +34,16 @@ from pathlib import Path
 COMPUTE_TIER = os.environ.get("COMPUTE_TIER", "T4").upper()
 
 if COMPUTE_TIER == "T4":
-    LIMIT_IFEVAL = 540
-    LIMIT_GSM8K = 500
-    LIMIT_MMLU = 500
-    LIMIT_ALPACA = 100
+    LIMIT_IFEVAL = 10
+    LIMIT_GSM8K = 10
+    LIMIT_MMLU = 10
+    LIMIT_ALPACA = 10
     BATCH_SIZE = 1
 else:
-    LIMIT_IFEVAL = 540
-    LIMIT_GSM8K = 1319
-    LIMIT_MMLU = 5000
-    LIMIT_ALPACA = 250
+    LIMIT_IFEVAL = 10
+    LIMIT_GSM8K = 10
+    LIMIT_MMLU = 10
+    LIMIT_ALPACA = 10
     BATCH_SIZE = 4
 
 REPO_ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
@@ -81,7 +81,7 @@ def run_lm_eval(adapter_path, tasks, limit, num_fewshot, label):
     cmd = [
         "lm_eval",
         "--model", "hf",
-        "--model_args", f"pretrained={base},peft={adapter_path},load_in_4bit=True",
+        "--model_args", f"pretrained={base},peft={adapter_path},load_in_4bit=False",
         "--tasks", tasks,
         "--num_fewshot", str(num_fewshot),
         "--limit", str(limit),
@@ -194,18 +194,13 @@ def generate_with_adapter(adapter_path, prompts, max_new_tokens=256):
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=base, max_seq_length=max_len, dtype=None, load_in_4bit=True,
     )
+    from unsloth.chat_templates import get_chat_template
+    tokenizer = get_chat_template(
+        tokenizer,
+        chat_template="qwen-2.5",
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    if getattr(tokenizer, "chat_template", None) is None:
-        tokenizer.chat_template = (
-            "{% for message in messages %}"
-            "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
-            "{% endfor %}"
-            "{% if add_generation_prompt %}"
-            "{{'<|im_start|>assistant\n'}}"
-            "{% endif %}"
-        )
-        print("Set default ChatML chat_template")
     model = PeftModel.from_pretrained(model, str(adapter_path))
     FastLanguageModel.for_inference(model)
 

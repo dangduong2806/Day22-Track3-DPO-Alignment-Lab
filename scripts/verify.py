@@ -13,7 +13,18 @@ import argparse
 import json
 import re
 import sys
+import io
 from pathlib import Path
+
+# Force UTF-8 stdout/stderr on Windows to avoid UnicodeEncodeError for checkmarks
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Fallback for Python versions where reconfigure is not available
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 TEMPLATE_MARKERS = [
     r"<Họ Tên>",

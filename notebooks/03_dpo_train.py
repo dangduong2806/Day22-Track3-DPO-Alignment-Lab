@@ -121,7 +121,7 @@ model = FastLanguageModel.get_peft_model(
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
     ],
-    use_gradient_checkpointing="unsloth",
+    use_gradient_checkpointing=True if COMPUTE_TIER == "T4" else "unsloth",
     random_state=42,
     use_rslora=False,
     loftq_config=None,
@@ -158,6 +158,7 @@ dpo_config = DPOConfig(
     fp16=not torch.cuda.is_bf16_supported(),
     seed=42,
     loss_type="sigmoid",         # DPO standard (alternatives: ipo, hinge, kto)
+    dataset_num_proc=1,
     report_to="none",
 )
 

@@ -31,6 +31,7 @@ assert COMPUTE_TIER in ("T4", "BIGGPU"), f"Invalid COMPUTE_TIER: {COMPUTE_TIER}"
 
 # Tier-specific hyperparameters
 if COMPUTE_TIER == "T4":
+    os.environ["XFORMERS_FORCE_DISABLE"] = "1"
     BASE_MODEL = "unsloth/Qwen2.5-3B-bnb-4bit"
     MAX_LEN = 512
     PER_DEVICE_BATCH = 1
@@ -41,7 +42,7 @@ else:  # BIGGPU
     PER_DEVICE_BATCH = 2
     GRAD_ACCUM = 4
 
-SFT_DATASET = os.environ.get("SFT_DATASET", "saillab/alpaca-vietnamese-cleaned")
+SFT_DATASET = os.environ.get("SFT_DATASET", "bkai-foundation-models/vi-alpaca")
 SFT_SLICE = 1000
 NUM_EPOCHS = 1
 
@@ -64,6 +65,24 @@ gpu = torch.cuda.get_device_properties(0)
 print(f"GPU: {gpu.name}  ({gpu.total_memory / 1e9:.1f} GB)")
 
 # %% [markdown]
+# ## 0a. Skipping SFT-mini training (Download pre-trained adapter)
+#
+# As requested, the pre-trained SFT adapter can be downloaded from Hugging Face
+# and placed in the `adapters/sft-mini/` directory to skip SFT training and save compute.
+
+# %%
+from huggingface_hub import snapshot_download
+
+sft_adapter_repo_id = "xhuy8248/qwen2.5-3b-vi-lab21-r16"
+print(f"Downloading SFT adapter from {sft_adapter_repo_id} to {ADAPTER_OUT}...")
+snapshot_download(
+    repo_id=sft_adapter_repo_id,
+    local_dir=str(ADAPTER_OUT),
+    local_dir_use_symlinks=False,
+)
+print("SFT adapter downloaded successfully.")
+
+# %% [markdown]
 # ## 1. Load base model with Unsloth
 #
 # Unsloth bundles patched 4-bit kernels — that's how Qwen2.5-3B (or 7B) stays
@@ -73,6 +92,11 @@ print(f"GPU: {gpu.name}  ({gpu.total_memory / 1e9:.1f} GB)")
 # %%
 from unsloth import FastLanguageModel
 
+# Disable xFormers on Turing or older GPUs (like T4) to avoid DPO backward GQA errors
+if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] < 8:
+    FastLanguageModel.disable_xFormers = True
+    print("Turing or older GPU detected. Disabled xFormers to ensure DPO GQA backward compatibility via SDPA.")
+
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=BASE_MODEL,
     max_seq_length=MAX_LEN,
@@ -80,21 +104,17 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     load_in_4bit=True,
 )
 
+# Apply standard chat template for base model
+from unsloth.chat_templates import get_chat_template
+tokenizer = get_chat_template(
+    tokenizer,
+    chat_template="qwen-2.5",
+)
+
 # Critical for batch training — Qwen tokenizers ship without pad token.
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
     print("Set tokenizer.pad_token = eos_token")
-
-if getattr(tokenizer, "chat_template", None) is None:
-    tokenizer.chat_template = (
-        "{% for message in messages %}"
-        "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}"
-        "{{'<|im_start|>assistant\n'}}"
-        "{% endif %}"
-    )
-    print("Set default ChatML chat_template")
 
 # %%
 model = FastLanguageModel.get_peft_model(
@@ -107,7 +127,7 @@ model = FastLanguageModel.get_peft_model(
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
     ],
-    use_gradient_checkpointing="unsloth",  # 30% VRAM savings
+    use_gradient_checkpointing=True if COMPUTE_TIER == "T4" else "unsloth",  # 30% VRAM savings
     random_state=42,
     use_rslora=False,
     loftq_config=None,
@@ -167,6 +187,7 @@ sft_config = SFTConfig(
     seed=42,
     max_length=MAX_LEN,
     dataset_text_field="text",
+    dataset_num_proc=1,
     report_to="none",
 )
 

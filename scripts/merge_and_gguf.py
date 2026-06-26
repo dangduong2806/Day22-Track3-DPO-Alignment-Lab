@@ -47,30 +47,24 @@ def main():
     import gc
     import torch
 
-    # Step 1: load + stack SFT then DPO
+    # Step 1: load base model in FP16 and stack SFT then DPO sequentially
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=base, max_seq_length=max_len, dtype=None, load_in_4bit=True,
+        model_name=base, max_seq_length=max_len, dtype=None, load_in_4bit=False,
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    if getattr(tokenizer, "chat_template", None) is None:
-        tokenizer.chat_template = (
-            "{% for message in messages %}"
-            "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
-            "{% endfor %}"
-            "{% if add_generation_prompt %}"
-            "{{'<|im_start|>assistant\n'}}"
-            "{% endif %}"
-        )
-        print("Set default ChatML chat_template")
 
     model = PeftModel.from_pretrained(model, args.sft_path)
-    print("Loaded SFT-mini adapter")
+    model = model.merge_and_unload()
+    print("Loaded and merged SFT-mini adapter")
+
+    model = PeftModel.from_pretrained(model, args.dpo_path)
+    print("Loaded DPO adapter")
 
     # Step 2: save merged FP16
-    model.save_pretrained_merged(
-        args.merged_output, tokenizer, save_method="merged_16bit",
-    )
+    model = model.merge_and_unload()
+    model.save_pretrained(args.merged_output)
+    tokenizer.save_pretrained(args.merged_output)
     print(f"Saved merged FP16 to {args.merged_output}")
 
     # Remove quantization_config from config.json to avoid loading errors in full precision
