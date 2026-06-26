@@ -79,6 +79,11 @@ assert torch.cuda.is_available(), "DPO needs a CUDA GPU. See HARDWARE-GUIDE.md."
 from unsloth import FastLanguageModel
 from peft import PeftModel
 
+# Disable xFormers on Turing or older GPUs (like T4) to avoid DPO backward GQA errors
+if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] < 8:
+    FastLanguageModel.disable_xFormers = True
+    print("Turing or older GPU detected. Disabled xFormers to ensure DPO GQA backward compatibility via SDPA.")
+
 # Policy — gets new DPO LoRA adapter on top of SFT LoRA
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=BASE_MODEL,

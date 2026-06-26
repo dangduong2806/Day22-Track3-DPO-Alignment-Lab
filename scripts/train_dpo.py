@@ -53,6 +53,10 @@ def main():
     from trl import DPOConfig, DPOTrainer
     from unsloth import FastLanguageModel
 
+    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] < 8:
+        FastLanguageModel.disable_xFormers = True
+        print("Turing or older GPU detected. Disabled xFormers to ensure DPO GQA backward compatibility via SDPA.")
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=base_model, max_seq_length=max_len, dtype=None, load_in_4bit=True,
     )
