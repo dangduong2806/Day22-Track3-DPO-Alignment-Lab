@@ -105,6 +105,16 @@ model.save_pretrained_merged(
 )
 print(f"Saved merged FP16 to {MERGED_PATH}")
 
+# Remove quantization_config from config.json to avoid loading errors in full precision
+import json
+config_path = MERGED_PATH / "config.json"
+if config_path.exists():
+    config = json.loads(config_path.read_text())
+    if "quantization_config" in config:
+        del config["quantization_config"]
+        config_path.write_text(json.dumps(config, indent=2))
+        print("Removed quantization_config from merged model config.json")
+
 # Free GPU memory before GGUF conversion (which spawns a subprocess that needs RAM)
 import gc
 
