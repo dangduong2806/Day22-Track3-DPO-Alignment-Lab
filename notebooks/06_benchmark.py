@@ -196,6 +196,16 @@ def generate_with_adapter(adapter_path, prompts, max_new_tokens=256):
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    if getattr(tokenizer, "chat_template", None) is None:
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}"
+            "{{'<|im_start|>assistant\n'}}"
+            "{% endif %}"
+        )
+        print("Set default ChatML chat_template")
     model = PeftModel.from_pretrained(model, str(adapter_path))
     FastLanguageModel.for_inference(model)
 

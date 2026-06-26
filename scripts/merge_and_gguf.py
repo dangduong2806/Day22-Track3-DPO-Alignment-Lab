@@ -53,6 +53,16 @@ def main():
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    if getattr(tokenizer, "chat_template", None) is None:
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}"
+            "{{'<|im_start|>assistant\n'}}"
+            "{% endif %}"
+        )
+        print("Set default ChatML chat_template")
 
     model = PeftModel.from_pretrained(model, args.sft_path)
     print("Loaded SFT-mini adapter")
@@ -72,6 +82,16 @@ def main():
         model_name=args.merged_output,
         max_seq_length=max_len, dtype=None, load_in_4bit=False,
     )
+    if getattr(tokenizer, "chat_template", None) is None:
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}"
+            "{{'<|im_start|>assistant\n'}}"
+            "{% endif %}"
+        )
+        print("Set default ChatML chat_template")
 
     for q in quants:
         print(f"Quantizing to GGUF {q}...")

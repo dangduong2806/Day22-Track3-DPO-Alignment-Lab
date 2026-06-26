@@ -67,6 +67,16 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 )
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
+if getattr(tokenizer, "chat_template", None) is None:
+    tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
+        "{% endfor %}"
+        "{% if add_generation_prompt %}"
+        "{{'<|im_start|>assistant\n'}}"
+        "{% endif %}"
+    )
+    print("Set default ChatML chat_template")
 
 # Stack SFT-mini → DPO adapters
 SFT_PATH = REPO_ROOT / "adapters" / "sft-mini"
@@ -119,6 +129,16 @@ model, tokenizer = FLM.from_pretrained(
     dtype=None,
     load_in_4bit=False,    # already merged; load full precision
 )
+if getattr(tokenizer, "chat_template", None) is None:
+    tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n'}}"
+        "{% endfor %}"
+        "{% if add_generation_prompt %}"
+        "{{'<|im_start|>assistant\n'}}"
+        "{% endif %}"
+    )
+    print("Set default ChatML chat_template")
 
 # %%
 # Save GGUF in 1 quantization tier (Q4_K_M). Add more tiers below if you want the
